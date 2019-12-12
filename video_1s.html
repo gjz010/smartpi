@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!--script src="https://wzrd.in/standalone/h264-converter@latest"></script-->
+    <!--script src="https://unpkg.com/jpeg-asm@1.0.0/dist/jpegasm.js"></script-->
+    <style>
+        .slidecontainer {
+          width: 100%; /* Width of the outside container */
+        }
+
+        /* The slider itself */
+        .slider {
+          -webkit-appearance: none;  /* Override default CSS styles */
+          appearance: none;
+          width: 100%; /* Full-width */
+          height: 25px; /* Specified height */
+          background: #d3d3d3; /* Grey background */
+          outline: none; /* Remove outline */
+          opacity: 0.7; /* Set transparency (for mouse-over effects on hover) */
+          -webkit-transition: .2s; /* 0.2 seconds transition on hover */
+          transition: opacity .2s;
+        }
+
+        /* Mouse-over effects */
+        .slider:hover {
+          opacity: 1; /* Fully shown on mouse-over */
+        }
+
+        /* The slider handle (use -webkit- (Chrome, Opera, Safari, Edge) and -moz- (Firefox) to override default look) */
+        .slider::-webkit-slider-thumb {
+          -webkit-appearance: none; /* Override default look */
+          appearance: none;
+          width: 25px; /* Set a specific slider handle width */
+          height: 25px; /* Slider handle height */
+          background: #4CAF50; /* Green background */
+          cursor: pointer; /* Cursor on hover */
+        }
+
+        .slider::-moz-range-thumb {
+          width: 25px; /* Set a specific slider handle width */
+          height: 25px; /* Slider handle height */
+          background: #4CAF50; /* Green background */
+          cursor: pointer; /* Cursor on hover */
+        }
+    </style>
+    <title>SmartPi LiveStream</title>
+</head>
+<body>
+
+<!--video controls width="640px" height="480px" id="smartpi_stream"></video-->
+<div>
+<canvas width="640px" height="480px" style="border:black;" id="smartpi_stream"></canvas>
+<div class="slidecontainer" width="640px">
+    <input type="range" width="640px" min="1" max="100" value="50" class="slider" id="myRange">
+</div>
+</div>
+</body>
+
+<script type="text/javascript">
+    //require.cache.expire = 100000;
+    async function main(){
+
+        //let VideoConverter=h264Converter.default;
+        //h264Converter.setLogger(console.log, console.err);
+        let elem=document.getElementById('smartpi_stream');
+        let ctx = elem.getContext("2d");
+        //const converter=new VideoConverter(elem, 60, 10);
+
+        let socket = new WebSocket("ws://10.114.51.1:17000");
+        socket.binaryType = 'arraybuffer';
+        function getUint64(dataview, byteOffset, littleEndian) {
+          // split 64-bit number into two 32-bit (4-byte) parts
+          const left =  dataview.getUint32(byteOffset, littleEndian);
+          const right = dataview.getUint32(byteOffset+4, littleEndian);
+
+          // combine the two 32-bit values
+          const combined = littleEndian? left + 2**32*right : 2**32*left + right;
+
+          if (!Number.isSafeInteger(combined))
+            console.warn(combined, 'exceeds MAX_SAFE_INTEGER. Precision may be lost');
+
+          return combined;
+        }
+        let framequeue=[];
+
+        async function request_frame(frame){
+            const buffer=new ArrayBuffer(9);
+
+            const view=new DataView(buffer);
+            view.setUint8(0, 0x1);
+            view.setBigUint64(1, BigInt(frame), true);
+            //console.log(buffer);
+            socket.send(buffer);
+        }
+        let tags=[];
+        let frames=[];
+        let offset=0;
+        window.tags=tags;
+        window.frames=frames;
+
+
+        let progress=0;
+
+        let rendered_frames=0;
+        let t0 = performance.now();
+        async function raf_refresh(){
+            //console.log(`${progress}/${offset+frames.length-1}`)
+            if(progress>=(offset+frames.length-1)){
+
+            }else{
+                let img=await frames[progress-offset];
+                ctx.drawImage(img, 0, 0);
+                progress++;
+            }
+            rendered_frames++;
+            if(rendered_frames%100==0){
+                let t1=performance.now()-t0;
+                console.log(`${progress}/${offset+frames.length-1} FPS=${rendered_frames/(t1/1000)}`);
+            }
+
+            window.requestAnimationFrame(raf_refresh);
+        }
+
+
+        window.requestAnimationFrame(raf_refresh);
+        socket.onmessage=function(e){
+            const message=e.data;
+            const view=new DataView(message);
+            let len=view.byteLength;
+            let type=view.getUint8(len-1);
+            if(type==0){
+                let a=getUint64(view, 0, true);
+                let b=getUint64(view, 8, true);
+                console.log(a, b);
+                let header=message.slice(16, len-1);
+                console.log(header);
+                try{
+                    //converter.appendRawData(new Uint8Array(header));
+                }catch(err){
+                    console.log(err);
+                }
+                offset=(b-10)*10;
+                progress=offset;
+                for(let i=10; i>=1; i--){
+                    framequeue.push(b-i);
+                }
+                for(let i=10; i>=1; i--){
+                    request_frame(b-i);
+                }
+            }else if(type==1){
+                let i=framequeue.shift();
+                //console.log("frame "+i+" fetched!");
+                let offset=160;
+                let sizes=[];
+
+                for(let i=0; i<10; i++){
+                    let size=getUint64(view, i*16, true);
+                    let frame_tag=getUint64(view, i*16+8, true);
+                    sizes.push(size);
+                    tags.push(frame_tag);
+                }
+
+
+                for(let i=0; i<10; i++){
+                    let frame=message.slice(offset, offset+sizes[i]);
+                    offset+=sizes[i];
+                    //let jpeg=jpegasm.decode(frame,true);
+                    //let old_buffer=new Uint8Array(jpeg.buffer);
+                    let frame_img=new Promise((resolve, rejected)=>{
+                        const blob=new Blob([frame], {"type": "image/jpeg"});
+                        const url=URL.createObjectURL(blob);
+                        const img=new Image();
+                        img.onload=()=>{
+                            URL.revokeObjectURL(url);
+                            resolve(img);
+                        }
+                        img.src=url;
+                    })
+                    //console.log(new_buffer);
+                    frames.push(frame_img);
+                    if(frame.size>60*60){
+                        frames.shift();
+                        tags.shift();
+                    }
+                }
+
+                framequeue.push(i+10);
+                request_frame(i+10);
+            }else if(type==2){
+                let i=framequeue.shift();
+                let a=getUint64(view, 0, true);
+                let b=getUint64(view, 8, true);
+                //console.log("frame "+i+` failed! (${a}, ${b})`);
+                if(framequeue.length==0){
+                    setTimeout(()=>{
+                        let b=i;
+                        for(let i=9; i>=0; i--){
+                            framequeue.push(b-i);
+                        }
+                        for(let i=9; i>=0; i--){
+                            request_frame(b-i);
+                        }
+                    }, 500)
+                }
+
+            }
+        }
+        //converter.play();
+    }
+    main()
+</script>
+</html>

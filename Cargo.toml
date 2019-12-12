@@ -1,0 +1,36 @@
+[package]
+name = "smartpi"
+version = "0.1.0"
+authors = ["gjz010 <gjz010944@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+
+[target.'cfg(any(unix, macos))'.dependencies.rscam]
+version = "0.5.5"
+features = ["no_wrapper"]
+
+
+[target.'cfg(windows)'.dependencies.escapi]
+version = "4.0.0"
+
+[target.'cfg(windows)'.dependencies.image]
+version = "*"
+
+
+[dependencies.tokio]
+version = "=0.2.0-alpha.6"
+
+
+[dependencies.tungstenite]
+version = "0.9.2"
+default-features = false
+features = []
+
+[dependencies]
+#tokio = "0.2.0-alpha.6"
+tokio-tungstenite = {version="0.10.0-alpha", git="https://github.com/dbcfd/tokio-tungstenite", branch="tokio2"}
+#futures = "0.3.1"
+byteorder = "1"
+bytes = "*"
