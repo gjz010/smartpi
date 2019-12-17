@@ -7,6 +7,7 @@ mod livestream;
 mod encode;
 mod inference_engine;
 mod timer;
+mod api;
 #[cfg(windows)]
 use camera::camera_win::WindowsCamera;
 #[cfg(any(unix, macos))]

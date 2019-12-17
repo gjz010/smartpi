@@ -10,7 +10,8 @@ build = "build.rs"
 
 [target.aarch64-unknown-linux-musl]
 #linker = "aarch64-linux-musl-gcc"
-
+[lib]
+crate-type = ["staticlib"]
 [target.'cfg(any(unix, macos))'.dependencies.rscam]
 version = "0.5.5"
 features = ["no_wrapper"]
