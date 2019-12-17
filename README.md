@@ -40,7 +40,7 @@ cargo rustc --target aarch64-unknown-linux-musl --release -- \
 Integrating with MicroPython
 ========
 
-```
+```bash
 # Please change library paths to your own.
 cd ports/unix
 export CC=aarch64-linux-musl-gcc
