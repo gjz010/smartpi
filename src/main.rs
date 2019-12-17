@@ -5,6 +5,8 @@ use tokio::prelude::*;
 mod camera;
 mod livestream;
 mod encode;
+mod inference_engine;
+mod timer;
 #[cfg(windows)]
 use camera::camera_win::WindowsCamera;
 #[cfg(any(unix, macos))]
@@ -16,12 +18,27 @@ use std::io::Cursor;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian, LittleEndian};
 use tokio_tungstenite::accept_async as accept_ws;
 use crate::encode::encode_outcoming_message;
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+use chrono::prelude::*;
+
+fn main(){
+    start_smartpi();
+
+}
+#[no_mangle]
+pub extern "C" fn start_smartpi(){
+    let runtime=tokio::runtime::Runtime::new().unwrap();
+    runtime.block_on(async {
+        tokio_main().await.unwrap();
+    });
+}
+
+
+
+async fn tokio_main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(windows)]
     let camera=WindowsCamera::new(640, 480, 60);
     #[cfg(any(unix, macos))]
-    let camera=PiCamera::new(640, 480, 55);
+    let camera=PiCamera::new(640, 480, 50);
     let worker=LiveStream::new(camera);
     let ls=worker.start();
 
@@ -60,8 +77,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                                 0x1 => { //FrameReq
+                                    {
+                                        //let timer=timer::Timer::new("uncompressed image");
                                     let frame = client.request_batch(arg as usize).await;
-                                    let ret=tx.send(Message::binary(encode::encode_outcoming_message(OutcomingMessage::FrameArrive(frame)))).await;
+                                    //println!("Sending");
+
+
+                                        let ret = tx.send(Message::binary(encode::encode_outcoming_message(OutcomingMessage::FrameArrive(frame)))).await;
+                                    }
+                                    //println!("Sent");
                                     match ret{
                                         Err(_)=>{break;}
                                         Ok(_)=>{}
@@ -105,3 +129,9 @@ fn main_camera() {
     }
 }
 */
+
+pub fn time_now()->usize{
+    let now = Utc::now();
+    let stamp=now.timestamp_millis() as usize;
+    stamp
+}

@@ -52,22 +52,30 @@
 <div>
 <canvas width="640px" height="480px" style="border:black;" id="smartpi_stream"></canvas>
 <div class="slidecontainer" width="640px">
-    <input type="range" width="640px" min="1" max="100" value="50" class="slider" id="myRange">
+    <input type="range" width="640px" min="1" max="100" value="50" class="slider" id="myRange" >
 </div>
 </div>
 </body>
 
 <script type="text/javascript">
     //require.cache.expire = 100000;
+    let progbar=document.getElementById('myRange');
+     let progress=0;
+     progbar.addEventListener("input", function(ev) {
+     //console.log(progbar.min, progbar.max, progbar.value, ev.value);
+        progress=progbar.value;
+     });
+
     async function main(){
 
         //let VideoConverter=h264Converter.default;
         //h264Converter.setLogger(console.log, console.err);
         let elem=document.getElementById('smartpi_stream');
-        let ctx = elem.getContext("2d");
+        let ctx = elem.getContext("2d", {"alpha": false});
+        ctx.imageSmoothingEnabled= false;
         //const converter=new VideoConverter(elem, 60, 10);
 
-        let socket = new WebSocket("ws://127.0.0.1:17000");
+        let socket = new WebSocket("ws://10.114.51.1:17000");
         socket.binaryType = 'arraybuffer';
         function getUint64(dataview, byteOffset, littleEndian) {
           // split 64-bit number into two 32-bit (4-byte) parts
@@ -93,30 +101,67 @@
             //console.log(buffer);
             socket.send(buffer);
         }
-        let tags=[];
+
         let frames=[];
         let offset=0;
-        window.tags=tags;
+        //window.tags=tags;
         window.frames=frames;
 
 
-        let progress=0;
+
 
         let rendered_frames=0;
         let t0 = performance.now();
+        let SIZE=24;
+        ctx.font =SIZE+'px Arial';
+        ctx.fillStyle = "red";
+        function parsetag(tag){
+            if(tag==0) return "无"
+            else if(tag==1) return "布"
+            else if(tag==2) return "剪刀"
+            else return "石头"
+        }
+        let received_frames=0;
+        let receive_t=performance.now();
         async function raf_refresh(){
             //console.log(`${progress}/${offset+frames.length-1}`)
+            let f=null;
             if(progress>=(offset+frames.length-1)){
+                if(frames[progress-offset]){
+                    f=await frames[progress-offset];
 
+                }else{
+
+                }
             }else{
-                let img=await frames[progress-offset];
-                ctx.drawImage(img, 0, 0);
+                f=await frames[progress-offset];
+                //console.log(new Date(capture_time))
+
                 progress++;
             }
-            rendered_frames++;
-            if(rendered_frames%100==0){
+            if(f){
+
+                let {img, capture_time, infer_time, tag}=f;
+                ctx.drawImage(img, 0, 0);
+                //ctx.drawImage(img["canvas"], 0, img["offset"]*480, 640, 480, 0, 0, 640, 480);
+                ctx.fillStyle = "red";
+                ctx.fillText(new Date(capture_time),  10, SIZE);
+                ctx.fillText(`Latency: ${new Date()-new Date(capture_time)}ms`,  10, SIZE*2);
+                ctx.fillText(`Infer latency: ${infer_time-capture_time}ms`, 10, SIZE*3)
                 let t1=performance.now()-t0;
-                console.log(`${progress}/${offset+frames.length-1} FPS=${rendered_frames/(t1/1000)}`);
+                let t2=performance.now()-receive_t;
+                ctx.fillText(`FPS: ${rendered_frames/(t1/1000)}`, 10, SIZE*4)
+                ctx.fillText(`(Remote: ${received_frames*10/t2*1000})`, 10, SIZE*5)
+                ctx.fillText(`Predict: ${parsetag(tag)}`, 10, SIZE*6)
+                //console.log(tag);
+            }
+            rendered_frames++;
+            progbar.min=offset;
+            progbar.max=offset+frames.length-1;
+            progbar.value=progress;
+            if(rendered_frames%100==0){
+
+                //console.log(`${progress}/${offset+frames.length-1} FPS=${rendered_frames/(t1/1000)}`);
             }
 
             window.requestAnimationFrame(raf_refresh);
@@ -124,6 +169,7 @@
 
 
         window.requestAnimationFrame(raf_refresh);
+
         socket.onmessage=function(e){
             const message=e.data;
             const view=new DataView(message);
@@ -132,9 +178,9 @@
             if(type==0){
                 let a=getUint64(view, 0, true);
                 let b=getUint64(view, 8, true);
-                console.log(a, b);
+                //console.log(a, b);
                 let header=message.slice(16, len-1);
-                console.log(header);
+                //console.log(header);
                 try{
                     //converter.appendRawData(new Uint8Array(header));
                 }catch(err){
@@ -147,16 +193,40 @@
             }else if(type==1){
                 let i=framequeue.shift();
                 console.log("frame "+i+" fetched!");
-                let offset=160;
-                let sizes=[];
 
+                let offset=320;
+                let sizes=[];
+                let capture_times=[];
+                let infer_times=[];
+                let tags=[];
                 for(let i=0; i<10; i++){
-                    let size=getUint64(view, i*16, true);
-                    let frame_tag=getUint64(view, i*16+8, true);
+                    let size=getUint64(view, i*32, true);
+                    let capture_time=getUint64(view, i*32+8, true);
+                    let infer_time=getUint64(view, i*32+16, true);
+                    let frame_tag=getUint64(view, i*32+24, true);
                     sizes.push(size);
+                    capture_times.push(capture_time);
+                    infer_times.push(infer_time);
                     tags.push(frame_tag);
                 }
+                /*
+                let imgdata=new ImageData(640, 4800);
+                let d=imgdata.data;
+                let j=0;
 
+                for(let i=0; i<640*480*10; i++){
+                    d[j]=message[offset+j];
+                    d[j+1]=message[offset+j+1];
+                    d[j+2]=message[offset+j+2];
+                    d[j+3]=255;
+                    j+=4;
+                }
+                let osc=new OffscreenCanvas(640, 4800);
+                let osctx=osc.getContext("2d", {"alpha": false});
+                osctx.imageSmoothingEnabled= false;
+                osctx.putImageData(imgdata,0,0);
+                console.log(imgdata);
+                */
 
                 for(let i=0; i<10; i++){
                     let frame=message.slice(offset, offset+sizes[i]);
@@ -164,35 +234,57 @@
                     //let jpeg=jpegasm.decode(frame,true);
                     //let old_buffer=new Uint8Array(jpeg.buffer);
                     let frame_img=new Promise((resolve, rejected)=>{
+                        let ct=capture_times[i];
+                        let it=infer_times[i];
+                        let tg=tags[i];
+                        //resolve({
+                        //    "img":{
+                        //        "canvas": osc,
+                        //        "offset": i
+                        //    }, "capture_time": ct, "infer_time": it, "tag": tg
+                        //})
+
+
                         const blob=new Blob([frame], {"type": "image/jpeg"});
                         const url=URL.createObjectURL(blob);
                         const img=new Image();
                         img.onload=()=>{
                             URL.revokeObjectURL(url);
-                            resolve(img);
+                            resolve({"img": img, "capture_time": ct, "infer_time": it, "tag": tg});
+                        }
+                        img.onerror=()=>{
+                            console.log("error!");
                         }
                         img.src=url;
+
                     })
                     //console.log(new_buffer);
                     frames.push(frame_img);
-                    if(frame.size>60*60){
+                    if(frames.size>60*60){
                         frames.shift();
-                        tags.shift();
+                        //tags.shift();
                     }
+
                 }
 
+                received_frames++;
+                if(received_frames%10==0){
+                    let t=performance.now()-receive_t;
+                    console.log(`recv fps=${received_frames*10/t*1000}`)
+                }
+                console.log("Requesting frame "+(i+1));
                 framequeue.push(i+1);
                 request_frame(i+1);
             }else if(type==2){
                 let i=framequeue.shift();
                 let a=getUint64(view, 0, true);
                 let b=getUint64(view, 8, true);
-                console.log("frame "+i+` failed! (${a}, ${b})`);
+                //console.log("frame "+i+` failed! (${a}, ${b})`);
                 if(framequeue.length==0){
                     setTimeout(()=>{
                         framequeue.push(i);
                         request_frame(i);
-                    }, 500)
+                    }, 10)
                 }
 
             }

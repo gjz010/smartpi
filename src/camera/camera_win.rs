@@ -36,6 +36,7 @@ impl CameraProvider for WindowsCamera {
                 let (width, height) = (camera.capture_width(), camera.capture_height());
                 //println!("capture1");
                 let pixels = camera.capture().unwrap();
+
                 //println!("capture2");
                 let mut buffer = vec![0; width as usize * height as usize * 3];
                 for i in 0..pixels.len() / 4 {
@@ -44,11 +45,12 @@ impl CameraProvider for WindowsCamera {
                     buffer[i * 3 + 2] = pixels[i * 4];
                 }
                 //println!("capture3");
+
                 let mut buf=Vec::new();
 
                 image::jpeg::JPEGEncoder::new(&mut buf).encode(&buffer, width, height, image::ColorType::RGB(8)).unwrap();
                 self.last_frame=Some(buf.clone());
-                self.counter=1;
+                self.counter=3;
                 Some(buf)
             }
             Some(vec)=>{

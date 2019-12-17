@@ -40,10 +40,10 @@ impl PiCamera{
 
 }
 impl CameraProvider for PiCamera {
-    fn capture(&mut self) -> Option<Vec<u8>> {
+    fn capture_zerocopy(&mut self, target: &mut Vec<u8>) -> Option<()> {
         let frame=self.device.capture().unwrap();
-
-        Some(Vec::from(&frame[..]))
+        target.put(&frame[..]);
+        Some(())
 
     }
     fn h264_header(&self)->Arc<Vec<u8>>{

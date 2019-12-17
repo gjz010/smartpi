@@ -8,12 +8,25 @@ use std::cell::RefCell;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::error::ErrorKind;
 use std::io::Write;
-
-type VideoFrame=(Vec<u8>, usize);
-
+use std::sync::mpsc as bchan;
+pub type VideoFrame=(Vec<u8>, usize, usize, usize);
+use crate::inference_engine::start_inference_service;
+use crate::time_now;
 // 10 Frames as a batch.
-type VideoBatch=[VideoFrame; 10];
-
+pub struct VideoBatchContent{
+    pub data: Vec<u8>,
+    pub sizes: [usize; 10],
+    pub capture_timestamps: [usize; 10],
+    pub infer_timestamps: [usize; 10],
+    pub infer_results: [usize; 10]
+}
+pub struct MutableVideoBatchContent{
+    pub data: Vec<u8>,
+    pub sizes: [usize; 10],
+    pub capture_timestamps: [usize; 10]
+}
+pub type VideoBatch=Arc<VideoBatchContent>;
+pub type MutableVideoBatch=Box<MutableVideoBatchContent>;
 pub enum IncomingMessage{
     CameraShot(VideoBatch),
     FrameReq(usize, usize),
@@ -112,7 +125,7 @@ impl LiveStream{
         LiveStream{
             next_client_id: 0,
             clients: BTreeMap::new(),
-            cached_frames: RingBuffer::new(100),
+            cached_frames: RingBuffer::new(20),
             channel: channel(5),
             camera: Some(Box::new(camera)),
             first_frame: None
@@ -124,28 +137,52 @@ impl LiveStream{
     pub fn start(mut self)->Sender<IncomingMessage>{
         let mut sender=self.get_sender();
         let ret=sender.clone();
+        println!("Taking first frame");
         let mut camera=self.camera.take().unwrap();
         self.first_frame=Some(camera.h264_header());
+        println!("Starting inferer");
+        let mut inferer=start_inference_service("inference_graph.xml", "inference_graph.bin", sender.clone());
+        println!("Inferer started");
         // Start camera thread.
         std::thread::spawn(move ||{
-            let mut i=0;
+            let mut i:usize=0;
             use std::time::Instant;
-            let now = Instant::now();
+            let mut now = Instant::now();
             loop {
 
 
                 //println!("camera {}", i);
                 i=i+1;
+                let msg=Box::new({
+                    let mut buffer=Vec::new();
+                    buffer.reserve(640*480*3*10);
+                    let mut timestamps=[0 as usize; 10];
+                    let mut old_size=0;
+                    let mut sizes=[0; 10];
+                    for i in 0..=9{
+                        camera.capture_zerocopy(&mut buffer).unwrap();
+                        timestamps[i]=time_now();
+                        sizes[i]=buffer.len()-old_size;
+                        old_size=buffer.len();
+                    }
+                    MutableVideoBatchContent{data: buffer, sizes, capture_timestamps: timestamps}
 
-                let mut msg= IncomingMessage::CameraShot({
-                    let mut data: [std::mem::MaybeUninit<VideoFrame>; 10] = unsafe {
+                });
+                /*
+                let mut msg= ({
+                    let mut data: [std::mem::MaybeUninit<Option<(Vec<u8>, usize)>>; 10] = unsafe {
                         std::mem::MaybeUninit::uninit().assume_init()
                     };
 
                     for elem in &mut data[..] {
-                        unsafe { std::ptr::write(elem.as_mut_ptr(), (camera.capture().unwrap(), 1)); }
+                        unsafe { std::ptr::write(elem.as_mut_ptr(), Some({
+                            let pic=camera.capture().unwrap();
+                            let stamp=time_now();
+                            (pic, stamp)
+
+                        })); }
                     }
-                    let batch=unsafe { std::mem::transmute::<_, VideoBatch>(data) };
+                    let batch=unsafe { std::mem::transmute::<_, [Option<(Vec<u8>, usize)>; 10]>(data) };
                     //let mut file = fs::File::create(&format!("frame-{}.264", i)).unwrap();
                     //for i in batch.iter(){
                     //    file.write_all(&i.0).unwrap();
@@ -153,7 +190,9 @@ impl LiveStream{
 
                     batch
                 });
-
+                */
+                inferer.send(msg).unwrap();
+                /*
                 loop {
                     let ret=sender.try_send(msg);
                     match ret{
@@ -168,11 +207,12 @@ impl LiveStream{
                         }
                     }
                 }
-
+                */
                 if i%2==0{
                     let elapsed = now.elapsed();
                     let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1000_000_000.0);
-                    println!("i={} sec={} FPS={}", i*10, sec, ((i*10) as f64)/sec);
+                    println!("i={} sec={} FPS={}", i*10, sec, 20.0/sec);
+                    now = Instant::now();
 
                 }
                 //std::thread::sleep(std::time::Duration::new(1, 0));
