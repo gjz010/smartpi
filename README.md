@@ -54,7 +54,7 @@ LDFLAGS_MOD="-static \
 -Wl,-Bstatic -Wl,--start-group \
 -lade -lmyriadPlugin -linference_engine_s -lusb -ludev -lngraph -lpugixml -lstb_image \
 -lvpu_common_lib -lvpu_graph_transformer -lmvnc -lfluid -lXLink -lgflags_nothreads -lstdc++ -lc -lgcc -ljpeg -lturbojpeg \
--lepeg -lexif -ljpeg_sample -linfer_service -lsmartpi -Wl,--end-group"\
+-lepeg -lexif -ljpeg_sample -linfer_service -lsmartpi -Wl,--end-group" \
 C_INCLUDE_PATH=/home/gjz010/playground/micropython-1.11/ports/unix/build/lib/libffi/out/lib/libffi-3.99999/include \
 make USER_C_MODULES=../../../modules CFLAGS_EXTRA=-DMODULE_SMARTPI_ENABLED=1
 ```
