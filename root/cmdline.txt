@@ -1,0 +1,1 @@
+root=/dev/mmcblk0p3 rootfstype=ext4 rootwait console=ttyS1 console=ttyS0,115200

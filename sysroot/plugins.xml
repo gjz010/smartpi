@@ -1,0 +1,6 @@
+<ie>
+    <plugins>
+        <plugin name="MYRIAD" location="libmyriadPlugin.so">
+        </plugin>
+    </plugins>
+</ie>

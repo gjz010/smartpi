@@ -1,0 +1,18 @@
+#!/bin/busybox sh
+echo "Bootstrapping SmartPI" >> /dev/ttyprintk
+mkdir /run
+mkdir /tmp
+cp sysroot.tar.lzma /
+mkdir /www
+cd /
+lzma -d sysroot.tar.lzma
+tar -xvf sysroot.tar
+echo "Starting udevd" >> /dev/ttyprintk
+/udevd -D -d
+sleep 2
+echo "Starting smartpi" >> /dev/ttyprintk
+./micropython smartpi.py &
+echo "Starting www server" >> /dev/ttyprintk
+cd www
+/bin/busybox httpd -f &
+echo "Everything done" >> /dev/ttyprintk
