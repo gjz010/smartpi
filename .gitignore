@@ -2,3 +2,5 @@
 **/*.rs.bk
 .idea
 .garbage
+library/libjpeg_sample.a
+library/libinfer_service.a
