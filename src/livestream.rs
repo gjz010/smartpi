@@ -10,7 +10,7 @@ use tokio::sync::mpsc::error::ErrorKind;
 use std::io::Write;
 use std::sync::mpsc as bchan;
 pub type VideoFrame=(Vec<u8>, usize, usize, usize);
-use crate::inference_engine::start_inference_service;
+use crate::inference_engine::{start_inference_service, InfererHandler};
 use crate::time_now;
 // 10 Frames as a batch.
 pub struct VideoBatchContent{
@@ -116,33 +116,29 @@ pub struct LiveStream{
     clients: BTreeMap<usize, Sender<OutcomingMessage>>,
     cached_frames: RingBuffer<VideoBatch>,
     channel: (Sender<IncomingMessage>, Receiver<IncomingMessage>),
-    camera: Option<Box<CameraProvider>>,
     first_frame: Option<Arc<Vec<u8>>>
 }
 
 impl LiveStream{
-    pub fn new(camera: impl CameraProvider + 'static)->Self{
+    pub fn new()->Self{
         LiveStream{
             next_client_id: 0,
             clients: BTreeMap::new(),
             cached_frames: RingBuffer::new(20),
             channel: channel(5),
-            camera: Some(Box::new(camera)),
             first_frame: None
         }
     }
     pub fn get_sender(&self)->Sender<IncomingMessage>{
         self.channel.0.clone()
     }
-    pub fn start(mut self)->Sender<IncomingMessage>{
+    pub fn start(mut self, mut camera: Box<CameraProvider>, mut inferer: Box<InfererHandler>, runtime: &mut tokio::runtime::Runtime)->Sender<IncomingMessage>{
         let mut sender=self.get_sender();
         let ret=sender.clone();
         println!("Taking first frame");
-        let mut camera=self.camera.take().unwrap();
+        //let mut camera=camera.take().unwrap();
         self.first_frame=Some(camera.h264_header());
-        println!("Starting inferer");
-        let mut inferer=start_inference_service("inference_graph.xml", "inference_graph.bin", sender.clone());
-        println!("Inferer started");
+        //let mut inferer=inferer.take().unwrap();
         // Start camera thread.
         std::thread::spawn(move ||{
             let mut i:usize=0;
@@ -191,7 +187,9 @@ impl LiveStream{
                     batch
                 });
                 */
+                //println!("sending to inferer");
                 inferer.send(msg).unwrap();
+                //println!("sent");
                 /*
                 loop {
                     let ret=sender.try_send(msg);
@@ -220,7 +218,7 @@ impl LiveStream{
 
         });
         // Start tokio coroutine
-        tokio::spawn (async move {
+        runtime.spawn (async move {
             loop{
                 let msg=self.channel.1.recv().await.unwrap();
                 self.handle_message(msg).await;

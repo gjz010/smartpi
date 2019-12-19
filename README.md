@@ -20,7 +20,7 @@ Change this to executable before you use this.
 
 ```bash
 # Use --start-group to ignore order. This is necessary since libmyriadPlugin and libinference_engine_s references each other.
-# Use libusb, libudev(eudev), libturbojpeg, libepeg and dldt stuff.
+# Use libusb, libudev(eudev if you hate systemd), libturbojpeg, libepeg and dldt stuff.
 # You need to cross-compile these libraries by themselves.
 # Static openvino: https://github.com/gjz010/dldt
 

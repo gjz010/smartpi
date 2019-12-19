@@ -7,6 +7,7 @@ mod livestream;
 mod encode;
 mod inference_engine;
 mod timer;
+mod realtime;
 mod api;
 #[cfg(windows)]
 use camera::camera_win::WindowsCamera;
@@ -20,7 +21,8 @@ use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian, LittleEndian};
 use tokio_tungstenite::accept_async as accept_ws;
 use crate::encode::encode_outcoming_message;
 use chrono::prelude::*;
-
+use tokio::sync::mpsc as achan;
+/*
 fn main(){
     start_smartpi();
 
@@ -32,24 +34,25 @@ pub extern "C" fn start_smartpi(){
         tokio_main().await.unwrap();
     });
 }
+*/
 
 
-
-async fn tokio_main() -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(windows)]
-    let camera=WindowsCamera::new(640, 480, 60);
-    #[cfg(any(unix, macos))]
-    let camera=PiCamera::new(640, 480, 50);
-    let worker=LiveStream::new(camera);
-    let ls=worker.start();
+async fn tokio_main(tx: achan::Sender<IncomingMessage>) -> Result<(), Box<dyn std::error::Error>> {
+    //#[cfg(windows)]
+    //let camera=WindowsCamera::new(640, 480, 60);
+    //#[cfg(any(unix, macos))]
+    //let camera=PiCamera::new(640, 480, 50);
+    //let worker=LiveStream::new(Box::new(camera));
+    //let ls=worker.start();
 
     let mut listener = TcpListener::bind("0.0.0.0:17000").await?;
     loop {
+        let sender=tx.clone();
         let (socket, _) = listener.accept().await?;
-        let tx=ls.clone();
+        //let tx=worker.get_sender();
         tokio::spawn(async move {
             let ws=accept_ws(socket).await.unwrap();
-            let mut client=LiveStreamClient::connect(tx).await;
+            let mut client=LiveStreamClient::connect(sender).await;
             let info=client.stream_info().await;
             let (mut tx, mut rx)=ws.split();
             //println!("({},{})", info.current_range.0, info.current_range.1);

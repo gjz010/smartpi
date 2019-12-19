@@ -14,6 +14,9 @@ struct Core(usize);
 struct ExecutableNetwork(usize);
 struct InferRequest(usize, Vec<u8>);
 use crate::time_now;
+use crate::timer::Timer;
+use crate::realtime::schedule_fifo;
+
 #[link(name = "infer_service")]
 extern "C" {
     #[no_mangle]
@@ -74,6 +77,7 @@ fn inference_service_req(mut core: Core, mut nn: ExecutableNetwork, network_path
         let mut blob=Vec::new();
         blob.resize(192*192*3*10, 0);
         let mut index=0;
+        let timer=Timer::new("resample");
         for elem in sizes.iter(){
             let jpeg=&data[offset..offset+*elem];
             let dst=&mut blob[index*192*192*3..(index+1)*192*192*3];
@@ -84,7 +88,7 @@ fn inference_service_req(mut core: Core, mut nn: ExecutableNetwork, network_path
             offset+=*elem;
             index=index+1;
         }
-
+        drop(timer);
 
         let req=unsafe {infer_batch(&mut nn, blob, 10, 3, 192, 192)};
         output.send((Some(data), sizes, capture_timestamps, Some(req))).unwrap();
@@ -110,7 +114,7 @@ fn inference_service_res(input: bchan::Receiver<(Option<Vec<u8>>, [usize; 10], [
                 let mut infer_timestamp:[usize; 10]=[time_now(); 10];
                 let mut infer_result: [usize; 10]=[0; 10];
                 //let mut index=0;
-                println!("Req: {} {} {} {} {} {} {} {}", ret[0], ret[1], ret[2], ret[3], ret[4], ret[5], ret[6], ret[7]);
+
                 //let dr=match argmax(&ret, index*4) {0=>"nothing", 1=>"paper", 2=>"scissor", 3=>"rock", _=>"nothing!"};
                 //println!("Result = {}", dr);
 
@@ -120,7 +124,7 @@ fn inference_service_res(input: bchan::Receiver<(Option<Vec<u8>>, [usize; 10], [
                     //unsafe { std::ptr::write(data[index].as_mut_ptr(), (pair.0, pair.1, time_now(), argmax(&ret, index*4))); }
                     //index=index+1;
                 }
-
+                //println!("Req: {:?}", infer_result);
                 Arc::new(VideoBatchContent{data: img.unwrap(), sizes, capture_timestamps: timestamps, infer_timestamps: infer_timestamp, infer_results: infer_result})
                 //let mut file = fs::File::create(&format!("frame-{}.264", i)).unwrap();
                 //for i in batch.iter(){
@@ -145,6 +149,7 @@ fn inference_service_res(input: bchan::Receiver<(Option<Vec<u8>>, [usize; 10], [
         }
     }
 }
+pub type InfererHandler=bchan::SyncSender<MutableVideoBatch>;
 pub fn start_inference_service(network_path: &str, weight_path: &str, chan: achan::Sender<IncomingMessage>)->bchan::SyncSender<MutableVideoBatch>{
     let (core, nn)=unsafe {initialize_inference_engine(network_path, weight_path)};
     let (tx, rx)=bchan::sync_channel(8);
@@ -153,6 +158,7 @@ pub fn start_inference_service(network_path: &str, weight_path: &str, chan: acha
     let sb=String::from(weight_path);
     //let sem=Arc::new(Semaphore::new(10, ()));
     spawn(move || {
+        schedule_fifo(80);
         inference_service_req(core, nn, &sa, &sb, rx, itx);
     });
     spawn(move || {

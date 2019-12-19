@@ -32,7 +32,7 @@ EXPORTED void InitializeInferService(const char* nwpath, const char* wtpath, uin
 			auto input_data=item.second;
 			input_data->setPrecision(Precision::U8);
 			input_data->setLayout(Layout::NHWC);
-			input_data->getPreProcess().setResizeAlgorithm(RESIZE_BILINEAR);
+			//input_data->getPreProcess().setResizeAlgorithm(RESIZE_BILINEAR);
 			input_data->getPreProcess().setColorFormat(ColorFormat::RGB);
 		}
 		for(auto& item: output_info){
