@@ -3,7 +3,8 @@ SmartPi Software Stack
 
 Software stack for SmartPi, embedded video streaming & neural network classification application based on Raspberry Pi 3/3+.
 
-Can run at 60fps, 640x480 resolution.
+Can run at 60fps, 640x480 resolution. Attached model (MobileNetV2) yields 70% accuracy on test set.
+
 
 - [x] Aarch64 Raspberry-Pi Kernel.
 - [x] Movidius driver for aarch64-linux-musl and static linking.
@@ -37,6 +38,9 @@ make smartpi.img # For a dd-ready image.
 
 Known Bottlenecks and known issues
 ========
+
+Modification to Tokio
+--------
 
 JPEG decompression.
 --------
