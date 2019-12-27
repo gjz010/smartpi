@@ -9,6 +9,7 @@ mod inference_engine;
 mod timer;
 mod realtime;
 mod api;
+mod jpegdecode;
 #[cfg(windows)]
 use camera::camera_win::WindowsCamera;
 #[cfg(any(unix, macos))]

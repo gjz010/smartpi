@@ -4,10 +4,10 @@
 .garbage
 library/libjpeg_sample.a
 library/libinfer_service.a
-sysroot/inference_graph.bin
-sysroot/inference_graph.xml
+#sysroot/inference_graph.bin
+#sysroot/inference_graph.xml
 sysroot/micropython
 sysroot.tar
 sysroot.tar.lzma
 smartpi.img
-sysroot/linux.lzma
+#sysroot/linux.lzma

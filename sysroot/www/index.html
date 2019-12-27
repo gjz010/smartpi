@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <!--script src="https://wzrd.in/standalone/h264-converter@latest"></script-->
-    <!--script src="https://unpkg.com/jpeg-asm@1.0.0/dist/jpegasm.js"></script-->
+    <script src="https://unpkg.com/jpeg-asm@1.0.0/dist/jpegasm.js"></script>
     <style>
         .slidecontainer {
           width: 100%; /* Width of the outside container */
@@ -13,7 +13,7 @@
         .slider {
           -webkit-appearance: none;  /* Override default CSS styles */
           appearance: none;
-          width: 100%; /* Full-width */
+          width: 640px; /* Full-width */
           height: 25px; /* Specified height */
           background: #d3d3d3; /* Grey background */
           outline: none; /* Remove outline */
@@ -51,21 +51,48 @@
 <!--video controls width="640px" height="480px" id="smartpi_stream"></video-->
 <div>
 <canvas width="640px" height="480px" style="border:black;" id="smartpi_stream"></canvas>
+
 <div class="slidecontainer" width="640px">
-    <input type="range" width="640px" min="1" max="100" value="50" class="slider" id="myRange" >
+    <input type="range" width="640px" min="1" max="100" value="50" class="slider" id="myRange" />
 </div>
+<input type="checkbox" id="lock_frame">锁定帧率：强行以接收帧率播放视频，这会增加实时性，但是会造成视觉效果的不连贯</input>
+<br/>
+<input type="checkbox" id="lazy">惰性模式：在没有运动的时候自动暂停视频</input><br/>敏感度：<br/><input type="range"  min="10" max="100000" value="10000" class="slider" id="sensitivity" />
+<br/>
+<input type="checkbox" id="details" checked="true">显示FPS等信息</input>
+<br/>
+<a href id="download">下载录制的视频</a>
+<p id="frame_time"></p>
+<p id="frame_latency"></p>
+<p id="frame_infer_latency"></p>
+<p id="frame_fps"></p>
+<p id="frame_remote_fps"></p>
+<p id="frame_predict"></p>
 </div>
 </body>
 
 <script type="text/javascript">
+
+	let frame_time=document.getElementById("frame_time");
+	let frame_latency=document.getElementById("frame_latency");
+	let frame_infer_latency=document.getElementById("frame_infer_latency");
+	let frame_fps=document.getElementById("frame_fps");
+	let frame_remote_fps=document.getElementById("frame_remote_fps");
+	let frame_predict=document.getElementById("frame_predict");
     //require.cache.expire = 100000;
     let progbar=document.getElementById('myRange');
+	let sensitivity=document.getElementById('sensitivity');
      let progress=0;
+	 let lock_frame=document.getElementById("lock_frame");
+	let lazy=document.getElementById("lazy");
+	let details=document.getElementById("details");
      progbar.addEventListener("input", function(ev) {
      //console.log(progbar.min, progbar.max, progbar.value, ev.value);
         progress=progbar.value;
+		lock_frame.checked=false;
+		lazy.checked=false;
      });
-
+	
     async function main(){
 
         //let VideoConverter=h264Converter.default;
@@ -74,7 +101,13 @@
         let ctx = elem.getContext("2d", {"alpha": false});
         ctx.imageSmoothingEnabled= false;
         //const converter=new VideoConverter(elem, 60, 10);
-
+		let vid=document.getElementById('vid');
+		let stream=elem.captureStream(60);
+		let recorder=new MediaRecorder(stream, {mimeType: 'video/webm;codecs=vp9'});
+		
+		
+		//vid.srcObject=stream;
+		//vid.play()
         let socket = new WebSocket("ws://10.114.51.1:17000");
         socket.binaryType = 'arraybuffer';
         function getUint64(dataview, byteOffset, littleEndian) {
@@ -103,7 +136,7 @@
         }
 
         let frames=[];
-        let offset=0;
+        window.offset=0;
         //window.tags=tags;
         window.frames=frames;
 
@@ -123,9 +156,17 @@
         }
         let received_frames=0;
         let receive_t=performance.now();
+		let lazy_counter=0;
+		let lazy_image=null;
+		let lazy_frame=null;
+		let lazy_play=250;
         async function raf_refresh(){
             //console.log(`${progress}/${offset+frames.length-1}`)
+			
             let f=null;
+			if(lock_frame.checked || lazy.checked){
+				progress=offset+frames.length-1;
+			}
             if(progress>=(offset+frames.length-1)){
                 if(frames[progress-offset]){
                     f=await frames[progress-offset];
@@ -139,20 +180,58 @@
 
                 progress++;
             }
+			lazy_counter++;
+			if(lazy_counter%50==0){
+				let last_f=await frames[frames.length-1];
+				let pixels=jpegasm.decode(last_f.slice)
+				pixels=new Uint8Array(pixels.buffer)
+				if(lazy_image){
+					//console.log("Lazy!", pixels);
+					let error=0;
+					for(let i=0; i<pixels.length; i++){
+						let delta=(pixels[i]-lazy_image[i])/255.0;
+						error+=delta*delta;
+					}
+					//console.log(error);
+					let sense=sensitivity.value;
+					if(error>sense) console.error(error);
+					else console.warn(error);
+					if(error>sense) lazy_play=250;
+					
+				}else{
+					
+				}
+				lazy_image=pixels;
+				lazy_frame=last_f;
+				lazy_counter=0;
+			}
+			if(lazy.checked){
+				if(lazy_play){
+					lazy_play--;
+				}else{
+					f=lazy_frame;
+				}
+			}
             if(f){
 
                 let {img, capture_time, infer_time, tag}=f;
                 ctx.drawImage(img, 0, 0);
                 //ctx.drawImage(img["canvas"], 0, img["offset"]*480, 640, 480, 0, 0, 640, 480);
-                ctx.fillStyle = "red";
-                ctx.fillText(new Date(capture_time),  10, SIZE);
-                ctx.fillText(`Latency: ${new Date()-new Date(capture_time)}ms`,  10, SIZE*2);
-                ctx.fillText(`Infer latency: ${infer_time-capture_time}ms`, 10, SIZE*3)
-                let t1=performance.now()-t0;
-                let t2=performance.now()-receive_t;
-                ctx.fillText(`FPS: ${rendered_frames/(t1/1000)}`, 10, SIZE*4)
-                ctx.fillText(`(Remote: ${received_frames*10/t2*1000})`, 10, SIZE*5)
-                ctx.fillText(`Predict: ${parsetag(tag)}`, 10, SIZE*6)
+				let t1=performance.now()-t0;
+					let t2=performance.now()-receive_t;
+					let details_arr=[new Date(capture_time), `Latency: ${new Date()-new Date(capture_time)}ms ${"S="+sensitivity.value+(lazy.checked && lazy_play==0?"(Pause)":"")}`, `Infer latency: ${infer_time-capture_time}ms`, `FPS: ${rendered_frames/(t1/1000)}`,`(Remote: ${received_frames*10/t2*1000})`, `Predict: ${parsetag(tag)}`]
+				if(details.checked){
+					
+					ctx.fillText(details_arr[0],  10, SIZE);
+					ctx.fillText(details_arr[1],  10, SIZE*2);
+					ctx.fillText(details_arr[2], 10, SIZE*3)
+					
+					ctx.fillText(details_arr[3], 10, SIZE*4)
+					ctx.fillText(details_arr[4], 10, SIZE*5)
+					ctx.fillText(details_arr[5], 10, SIZE*6)
+					
+					
+				}frame_time.innerHTML=details_arr.join("<br/>")
                 //console.log(tag);
             }
             rendered_frames++;
@@ -250,18 +329,20 @@
                         const img=new Image();
                         img.onload=()=>{
                             URL.revokeObjectURL(url);
-                            resolve({"img": img, "capture_time": ct, "infer_time": it, "tag": tg});
+                            resolve({"img": img, "capture_time": ct, "infer_time": it, "tag": tg, "slice": frame});
                         }
-                        img.onerror=()=>{
-                            console.log("error!");
+                        img.onerror=(err)=>{
+                            console.log("error!", err);
                         }
                         img.src=url;
 
                     })
                     //console.log(new_buffer);
                     frames.push(frame_img);
-                    if(frames.size>60*60){
+                    if(frames.length>60*60){
                         frames.shift();
+						window.offset++;
+						if(progress<window.offset) progress=window.offset;
                         //tags.shift();
                     }
 
@@ -290,6 +371,31 @@
             }
         }
         //converter.play();
+		chunks=[]
+		document.getElementById("download").onclick=function(ev){
+			ev.preventDefault();
+			recorder.stop()
+		}
+		recorder.ondataavailable = function(e) {
+			//console.log(e);
+			chunks.push(e.data);
+		}
+		recorder.onstop=function(e){
+			let blob = new Blob(chunks);
+			chunks = [];
+			let videoURL = window.URL.createObjectURL(blob);
+			const link = document.createElement('a');
+			link.style.display = 'none';
+			link.href=videoURL;
+			link.download="media.mp4"
+			document.body.appendChild(link)
+			link.click();
+			link.remove();
+			//window.location=(audioURL)
+		}
+		
+		recorder.start(10)
+		console.log(recorder.state);
     }
     main()
 </script>

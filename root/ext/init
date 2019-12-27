@@ -1,5 +1,18 @@
 #!/bin/busybox sh
 echo "Bootstrapping SmartPI" >> /dev/ttyprintk
+echo "Waiting for network" >> /dev/ttyprintk
+echo "Waiting for eth0." >> /dev/ttyprintk
+ifconfig eth0 10.114.51.1 netmask 255.255.255.0 up
+while ! ifconfig  | grep eth0 > /dev/null ; do
+	ifconfig >> /dev/ttyprintk
+    echo "Waiting for eth0." >> /dev/ttyprintk
+	ifconfig eth0 10.114.51.1 netmask 255.255.255.0 up
+    sleep 1
+done
+
+ifconfig eth0 10.114.51.1 netmask 255.255.255.0 up
+sleep 1
+udhcpd /etc/udhcpd.conf
 mkdir /run
 mkdir /tmp
 cp sysroot.tar.lzma /
@@ -11,7 +24,7 @@ echo "Starting udevd" >> /dev/ttyprintk
 /udevd -D -d
 sleep 2
 echo "Starting smartpi" >> /dev/ttyprintk
-./micropython smartpi.py &
+nice -n -20 /micropython smartpi.py >> /dev/ttyprintk &
 echo "Starting www server" >> /dev/ttyprintk
 cd www
 /bin/busybox httpd -f &
